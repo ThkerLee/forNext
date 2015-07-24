@@ -1,0 +1,55 @@
+import socket,select,struct,hashlib
+class epollServer():
+	global	md5
+	md5=hashlib.md5
+	def __init__(self,argv):
+		self.name=list()
+                self.serverfd=dict()
+		self.epollfd=dict()
+                self.serveradd=dict()
+                self.serverport=dict()
+		runkey={'tuple':self.init_tupleDict,'dict':self.init_dict}
+		if type(argv)== tuple:
+			runtype='tuple'
+		if type(argv)== dict:
+			runtype='dict'
+		runkey.get(runtype)(argv)	
+	def init_tupleDict(self,listdict):
+		for line in listdict:
+			self.name.append(line['servername'])
+			self.serveradd[line['servername']]=line['serveradd']
+			self.serverport[line['servername']]=line['serverport']
+
+	def init_dict(self,dic):
+		self.name.append(dic['servername'])
+                self.serveradd[dic['servername']]=line['serveradd']
+                self.serverport[dic['servername']]=line['serverport']	
+	def run(self):
+		servernum=len(self.name)
+		print '		............... Have %s Server Will Running  ...........\n' % servernum
+		global md5
+		for servername in self.name:
+			serverid=md5(servername).hexdigest()
+			serverid=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+			serverid.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+			serverid.setblocking(0)
+			self.serverfd[servername]=serverid
+			print '............... SocktServer %s is Starting         ...........' % servername
+			print '............... SocktServer %s ID is %s            ...........' % (servername,md5(servername).hexdigest())
+			serverid.bind((self.serveradd[servername],self.serverport[servername]))
+			serverid.listen(1)
+			print '............... SocktServer %s is Started          ...........' % servername
+			epollid='%s%s' %('epollid',serverid)
+			epollid=select.epoll()
+			self.epollfd[servername]=epollid
+			epollid.register(serverid.fileno(),select.EPOLLIN)
+			print '............... EpollServer for %s is Started ...........\n\n' % (servername) 
+
+	
+	
+
+if __name__=='__main__':
+	serverlist=({'servername':'epoo','serveradd':"0.0.0.0",'serverport':8989}
+		   ,{'servername':'ftp','serveradd':'0.0.0.0','serverport':8000})
+        server=epollServer(serverlist)
+        server.run()

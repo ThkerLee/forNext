@@ -1,0 +1,125 @@
+import socket,select,struct,hashlib
+from websocketcontentcode import websocketContentcode
+from websocketprocessor import websocketProcessor
+class epollServer():
+	global	md5
+	md5=hashlib.md5
+	def __init__(self,argv):
+		self.name=list()
+                self.serverfd=dict()
+		self.epollfd=''
+		self.clientcon=dict()
+		self.clientadd=dict()
+                self.serveradd=dict()
+                self.serverport=dict()	
+		self.events=dict()
+		self.handed=dict()
+		self.processor=dict()
+		self.request=dict()
+		runkey={'tuple':self.init_tupleDict,'dict':self.init_dict}
+		if type(argv)== tuple:
+			runtype='tuple'
+		if type(argv)== dict:
+			runtype='dict'
+		runkey.get(runtype)(argv)	
+	def init_tupleDict(self,listdict):
+		for line in listdict:
+			self.name.append(line['servername'])
+			self.serveradd[line['servername']]=line['serveradd']
+			self.serverport[line['servername']]=line['serverport']
+			self.processor[line['servername']]=line['processor']
+	def init_dict(self,dic):
+		self.name.append(dic['servername'])
+                self.serveradd[dic['servername']]=dic['serveradd']
+                self.serverport[dic['servername']]=dic['serverport']	
+		self.processor[dic['servername']]=dic['processor']
+	def run(self):
+		tmplist=list()
+		servernum=len(self.name)
+		print '		............... Have %s Server Will Running  ...........\n' % servernum
+		global md5
+		self.epllfd=md5('epollMiltisocketServer').hexdigest()
+		for servername in self.name:
+			self.clientcon[servername]=dict()
+			self.handed[servername]=list()
+			self.clientadd[servername]=dict()
+			self.request[servername]=dict()
+			serverid=md5(servername).hexdigest()
+			serverid=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+			serverid.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+			serverid.setblocking(0)
+			self.serverfd[servername]=serverid
+			print '............... SocktServer %s is Starting         ...........' % servername
+			print '............... SocktServer %s ID is %s            ...........' % (servername,md5(servername).hexdigest())
+			serverid.bind((self.serveradd[servername],self.serverport[servername]))
+			serverid.listen(1)
+			print '............... SocktServer %s is Started          ...........' % servername
+			epollfd=select.epoll()
+			epollfd.register(serverid.fileno(),select.EPOLLIN)
+			print '............... EpollServer for %s is Started ...........\n\n' % (servername) 
+
+	
+		while(True):
+			for servername in self.name:
+				even=self.epollfd.poll(1)	
+				print '%s' % servername
+				if len(even)>0:
+					for confd,event in even:
+						if confd ==self.serverfd[servername].fileno():
+							if confd not in self.clientcon[servername]:
+								newconfd,newadd=self.serverfd[servername].accept()
+								self.clientcon[servername][newconfd.fileno()]=newconfd
+								self.clientadd[servername][newconfd.fileno()]=newadd[0]
+								newconfd.setblocking(0)
+								self.epollfd[servername].register(newconfd.fileno(),select.EPOLLIN)
+								print '............ New Client Session From %s  ............' %newadd[0]
+						else:
+							if event & select.EPOLLIN:
+								if confd not in self.handed[servername]:
+									msg=self.recvmsg(servername,confd)
+									response=self.processor[servername].hand(servername,confd,msg)
+									if self.sendmsg(servername,confd,response):
+										self.handed[servername].append(confd)
+										print '............ Client %s Is Hand OK ............' %self.clientadd[servername][confd]	
+							#			self.epollfd[servername].modify(confd,select.EPOLLIN)
+								else:
+									msg=self.recvmsg(servername,confd)
+									print '%s' %msg
+									if msg :
+										request=self.processor[servername].epollin(msg)
+										self.request[servername][confd]=request
+										self.epollfd[servername].modify(confd,select.EPOLLOUT)
+									else:
+										self.epollfd[servername].modify(confd,select.EPOLLHUP)			
+							elif event & select.EPOLLOUT:
+								if confd in self.request[servername] :
+									msg=self.request[servername][confd]
+									response=self.processor[servername].epollout(msg)
+									if self.sendmsg(servername,confd,response):
+										self.epollfd[servername].modify(confd,select.EPOLLIN)
+								
+							elif event & select.EPOLLHUP:
+								self.epollfd[servername].unregister(confd)
+                                                		self.clientcon[servername][confd].close()
+                                                		self.handed[servername].remove(confd)
+
+	def sendmsg(self,servername,confd,sendcontent):
+		if sendcontent<0:
+			return False
+		else:
+			print 'fasong %s' %servername
+			self.clientcon[servername][confd].send(sendcontent)
+			return True	
+	def recvmsg(self,servername,confd,SIZE=4096):
+		print 'shoudao  %s' %servername
+		recvedcontent=self.clientcon[servername][confd].recv(SIZE)
+		return recvedcontent
+
+
+if __name__=='__main__':
+	contentcode=websocketContentcode()
+	pro=websocketProcessor()
+	serverlist=({'servername':'epoo','serveradd':"0.0.0.0",'serverport':8989,'processor':pro}
+		   ,{'servername':'ftp','serveradd':'0.0.0.0','serverport':8000,'processor':pro})
+        server=epollServer(serverlist)
+        server.run()
